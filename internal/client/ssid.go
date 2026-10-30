@@ -366,12 +366,39 @@ func buildSSIDForm(popup string, s *SSID) (*Form, error) {
 	return f, nil
 }
 
+// setSSIDCounts adds the number of enabled SSIDs of each radio to a form
+// posted to the wireless page, like the web UI does when saving. The device
+// only brings up that many SSIDs per radio on apply, so an SSID enabled
+// without updating the count is configured but not broadcast. s, if not nil,
+// overrides the state of its slot.
+func setSSIDCounts(f *Form, ifaces map[string]map[string]string, s *SSID) {
+	for i, dev := range []string{"wifi0", "wifi1"} {
+		n := 0
+		for slot := 1; slot <= MaxSSIDSlot; slot++ {
+			enabled := false
+			if s != nil && s.Slot == slot {
+				enabled = []bool{s.Enabled2G, s.Enabled5G}[i]
+			} else if o, ok := ifaces[fmt.Sprintf("%s_ssid_%d", dev, slot)]; ok {
+				enabled = o["disabled"] != "1"
+			}
+			if enabled {
+				n++
+			}
+		}
+		f.Set("cbid.wireless."+dev+".ath_count", strconv.Itoa(n))
+	}
+}
+
 // UpdateSSID writes the configuration of an SSID slot and applies it.
 func (c *Client) UpdateSSID(ctx context.Context, s *SSID) error {
 	if err := validSlot(s.Slot); err != nil {
 		return err
 	}
 	return c.stageAndApply(ctx, func() error {
+		ifaces, err := c.wirelessInterfaces(ctx)
+		if err != nil {
+			return err
+		}
 		popup, err := c.do(ctx, http.MethodGet, ssidPopupPath(s.Slot), nil)
 		if err != nil {
 			return err
@@ -380,6 +407,7 @@ func (c *Client) UpdateSSID(ctx context.Context, s *SSID) error {
 		if err != nil {
 			return err
 		}
+		setSSIDCounts(f, ifaces, s)
 		return c.submit(ctx, "admin/network/wireless_device", f)
 	})
 }

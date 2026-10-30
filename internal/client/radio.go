@@ -221,6 +221,11 @@ func (c *Client) UpdateRadio(ctx context.Context, r *Radio) error {
 			f.Set(p+"channel", r.Channel)
 			f.SetIfPresent("wireless."+dev+".channel", r.Channel)
 		}
+		ifaces, err := c.wirelessInterfaces(ctx)
+		if err != nil {
+			return err
+		}
+		setSSIDCounts(f, ifaces, nil)
 		return c.submit(ctx, "admin/network/wireless_device", f)
 	})
 }

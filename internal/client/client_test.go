@@ -222,3 +222,50 @@ func TestNewValidation(t *testing.T) {
 		t.Errorf("unexpected client: %s %s", c.endpoint, c.username)
 	}
 }
+
+func TestSetSSIDCounts(t *testing.T) {
+	ifaces := map[string]map[string]string{
+		"wifi0_ssid_1": {"disabled": "0"},
+		"wifi1_ssid_1": {"disabled": "0"},
+		"wifi0_ssid_2": {"disabled": "1"},
+		"wifi1_ssid_2": {"disabled": "0"},
+		"wifi0_ssid_3": {"disabled": "1"},
+		"wifi1_ssid_3": {"disabled": "1"},
+		"wifi0_ssid_4": {"disabled": "0"},
+		"wifi1_ssid_4": {"disabled": "0"},
+		"wifi0_ssid_5": {"disabled": "0"}, // not shown in the web UI
+	}
+	tests := []struct {
+		name         string
+		s            *SSID
+		wifi0, wifi1 string
+	}{
+		{"current state", nil, "2", "3"},
+		{"enable slot 3", &SSID{Slot: 3, Enabled2G: true, Enabled5G: true}, "3", "4"},
+		{"disable slot 4 on 5 GHz", &SSID{Slot: 4, Enabled2G: true}, "2", "2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &Form{}
+			setSSIDCounts(f, ifaces, tt.s)
+			for name, want := range map[string]string{
+				"cbid.wireless.wifi0.ath_count": tt.wifi0,
+				"cbid.wireless.wifi1.ath_count": tt.wifi1,
+			} {
+				if got, _ := f.Get(name); got != want {
+					t.Errorf("%s = %q, want %q", name, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestServiceRestartFromApplyPage(t *testing.T) {
+	page := `<script type="text/javascript">//<![CDATA[
+		var apply_xhr = new XHR();
+		apply_xhr.get('/cgi-bin/luci/;stok=c8c7f566d3d62e41d61e595a2944ad81/servicectl/restart/wireless,network', null,`
+	m := reServiceRestart.FindStringSubmatch(page)
+	if m == nil || m[1] != "wireless,network" {
+		t.Errorf("restart target = %v, want wireless,network", m)
+	}
+}

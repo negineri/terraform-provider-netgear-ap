@@ -88,6 +88,14 @@ export NETGEAR_AP_PASSWORD=...
 make testacc
 ```
 
+[mise](https://mise.jdx.dev/) を使う場合は、`mise.local.toml` (`.gitignore` で除外済み) に環境変数を書いておけます。
+
+```toml
+[env]
+NETGEAR_AP_ENDPOINT = "https://192.168.0.100"
+NETGEAR_AP_PASSWORD = "..."
+```
+
 ### ローカルでの動作確認
 
 `~/.terraformrc` に `dev_overrides` を設定すると、ビルドしたバイナリを直接使えます。
@@ -110,4 +118,5 @@ provider_installation {
 | SSID の読み取り | `admin/network/iface_status2/99,app,guest,lan,mgmt` (各 wifi-iface の UCI 値を JSON で取得) |
 | SSID の書き込み | `admin/network/wifi_Encryption_P2P` のフォームを取得し、ブラウザの JavaScript と同じ加工をして `admin/network/wireless_device` に POST |
 | 無線の読み書き | `admin/network/wifi_device?device=wifi0` / `wifi1` と `admin/network/wireless_device` のフォーム |
-| 適用 | `admin/uci/saveapply` の後 `admin/system/ajax_get_reload_state` と `admin/uci/changes` で完了を確認 |
+| 有効な SSID 数 | SSID・無線の書き込み時に `cbid.wireless.wifiN.ath_count` (バンドごとの有効な SSID 数) を送信 (Web UI の Save と同じ) |
+| 適用 | `admin/uci/saveapply` で UCI をコミットし、その応答ページの JavaScript と同じく `servicectl/restart/<configs>` でサービスを再起動、`servicectl/status` が `finish` になるまで待機。その後 `admin/system/ajax_get_reload_state` と `admin/uci/changes` で完了を確認 |

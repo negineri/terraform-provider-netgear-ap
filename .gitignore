@@ -4,3 +4,6 @@
 *.tfstate.*
 .terraform/
 .terraform.lock.hcl
+
+# Local environment (test device credentials)
+mise.local.toml

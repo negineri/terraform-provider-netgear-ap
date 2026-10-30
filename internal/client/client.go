@@ -292,8 +292,14 @@ func (c *Client) submit(ctx context.Context, path string, f *Form) error {
 	return err
 }
 
+var reServiceRestart = regexp.MustCompile(`/servicectl/restart/([A-Za-z0-9_,.\-]+)`)
+
 // apply commits and applies all staged UCI changes, then waits for the device
 // to finish reloading. Must be called with c.mu held.
+//
+// saveapply only commits the changes. The page it returns restarts the
+// affected services with a request to servicectl/restart/<configs> from
+// JavaScript, and the wireless settings are not in effect until then.
 func (c *Client) apply(ctx context.Context) error {
 	token, err := c.getCSRF(ctx)
 	if err != nil {
@@ -303,10 +309,41 @@ func (c *Client) apply(ctx context.Context) error {
 	q.Set("redir", "")
 	q.Set("apply_form_submit", "1")
 	q.Set("apply_val_csrf", token)
-	if _, err := c.do(ctx, http.MethodGet, "admin/uci/saveapply?"+q.Encode(), nil); err != nil {
+	body, err := c.do(ctx, http.MethodGet, "admin/uci/saveapply?"+q.Encode(), nil)
+	if err != nil {
 		return fmt.Errorf("applying changes: %w", err)
 	}
+	m := reServiceRestart.FindStringSubmatch(body)
+	if m == nil {
+		return fmt.Errorf("applying changes: unexpected response from the device: no service restart found: %s", truncate(body, 300))
+	}
+	if _, err := c.do(ctx, http.MethodGet, "servicectl/restart/"+m[1], nil); err != nil {
+		return fmt.Errorf("restarting %s: %w", m[1], err)
+	}
+	if err := c.waitServiceRestart(ctx); err != nil {
+		return err
+	}
 	return c.waitReload(ctx)
+}
+
+// waitServiceRestart waits until the services restarted by apply are up.
+func (c *Client) waitServiceRestart(ctx context.Context) error {
+	deadline := time.Now().Add(c.applyTimeout)
+	for {
+		status, err := c.do(ctx, http.MethodGet, "servicectl/status", nil)
+		if err == nil && strings.TrimSpace(status) == "finish" {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("waiting for the device to restart services: %w", err)
+			}
+			return fmt.Errorf("timed out waiting for the device to restart services (status %q)", truncate(status, 100))
+		}
+		if err := sleep(ctx, time.Second); err != nil {
+			return err
+		}
+	}
 }
 
 func (c *Client) waitReload(ctx context.Context) error {
@@ -418,6 +455,10 @@ func (c *Client) stageAndApply(ctx context.Context, stage func() error) error {
 	if err := stage(); err != nil {
 		_ = c.revert(context.WithoutCancel(ctx))
 		return err
+	}
+	// Nothing to apply when the device already has the desired settings.
+	if n, err := c.pendingChanges(ctx); err == nil && n == 0 {
+		return nil
 	}
 	if err := c.apply(ctx); err != nil {
 		return err
