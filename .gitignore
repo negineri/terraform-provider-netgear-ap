@@ -1,0 +1,6 @@
+/terraform-provider-netgear-ap
+/dist/
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
